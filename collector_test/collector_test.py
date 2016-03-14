@@ -8,6 +8,8 @@ Usage:
 Options:
   -h --help                   Show help.
   -f --fetch <n>              Fetch WP Articles (limit to n fetches)
+  -n --numprocs <n>           Number of parallel processes to run [default: 1]
+  -m --maxbooks <n>           Number of books to upload [default: 1]
 """
 
 
@@ -15,6 +17,8 @@ import time
 import urllib
 import logging
 import random
+import multiprocessing
+import itertools
 
 import requests
 import docopt
@@ -44,7 +48,8 @@ def fetch_wp_article_names(n):
                 f.write(title + '\n')
 
 
-def build_collection():
+def build_collection(_id=0):
+    log.info('start {}'.format(_id))
     with open('articles.txt') as f:
         articles = [line.strip() for line in f.readlines()]
     base_url = 'https://pediapress.com/collector'
@@ -53,8 +58,7 @@ def build_collection():
     b.find_by_xpath('//div[@class="cta"]//a[contains(@class, "btn")]')[0].click()
     b.find_by_text('Wikipedia (en)')[0].click()
 
-    # num_articles = random.randint(3, 15)
-    num_articles = random.randint(1, 3)
+    num_articles = random.randint(6, 20)
     log.info('building book with {} articles'.format(num_articles))
 
     def wait(n=1, msg=''):
@@ -71,11 +75,11 @@ def build_collection():
             elif css is not None:
                 element = b.find_by_css(css)
             if not element:
-                wait(1, 'element not present')
+                wait(0.5, 'element not present')
         if isinstance(element, list):
             element = element[0]
         while not element.visible:
-            wait(1, 'element invisible')
+            wait(0.5, 'element invisible')
         return element
 
     def add_suggested_article():
@@ -118,7 +122,16 @@ def build_collection():
 def main():
     args = docopt.docopt(__doc__)
     fetch = args.get('--fetch')
+    num_procs = int(args.get('--numprocs'))
+    max_books = int(args.get('--maxbooks'))
     if fetch:
         fetch_wp_article_names(int(fetch))
     else:
-        build_collection()
+        if num_procs > 1:
+            p = multiprocessing.Pool(processes=num_procs)
+            while p.imap_unordered(build_collection, range(max_books), chunksize=1):
+                pass
+            p.join()
+        else:
+            for _ in range(max_books):
+                build_collection()
